@@ -1,0 +1,4 @@
+#!/bin/bash
+# nukes all local containers
+
+lxc list | awk '/EPHEM/{system("lxc delete --force " $2 )}'

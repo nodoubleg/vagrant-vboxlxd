@@ -1,0 +1,66 @@
+#!/bin/bash
+# launch ephemeral lxc container, then throw it away after logging out.
+# good for quick tests in clean environments
+# works best with a local ubuntu mirror.
+
+# usage: ephem <image> <optional:latest>
+# example to launch trusty without updates:
+#   ephem ubuntu:t
+# example to launch xenial with latest updates:
+#   ephem ubuntu:x latest
+
+# defaults
+#IMAGE="images:ubuntu/xenial"
+IMAGE="images:centos/7"
+update=0
+if [[ $# -eq 0 ]]; then
+    echo "Using default image: $IMAGE"
+else
+    if [[ $# -gt 2 ]]; then
+        echo "usage: ephem [flavor] [latest]"
+    elif [[ $# -eq 2 ]]; then
+        IMAGE=$1
+        shift
+    fi
+    if [[ $# -eq 1 ]]; then
+        if [[ ${1}x == "latestx" ]]; then
+            update=1
+            echo "Using latest updates on default image: $IMAGE"
+        elif [[ ${1} != "latestx" ]]; then
+            IMAGE=$1
+        fi
+    fi
+fi
+
+container=$(lxc launch -e $IMAGE -p default -p docker | awk /Starting/'{print $2}')
+echo $container
+echo "Waiting for network..."
+# first check that the guest is all the way up.
+while true
+do
+    sleep 0.25
+    # This doesn't exist until cloud-init is finished.
+    # This was the cleanest series-agnostic way I could find to determine if
+    # we're done booting.
+    # We have to wait here because otherwise /tmp/ is nuked while the instance
+    # finishes booting. Waiting also gives us a nice "root@$HOSTNAME" prompt.
+    #lxc exec $container ls /etc/ssh/ssh_host_rsa_key > /dev/null 2>&1 && break
+    lxc exec $container -- ping -c 1 -W 1 localhost && break
+done
+
+while true;
+do 
+    lxc exec $container ls /tmp/wait4dns >/dev/null 2>&1 && break
+    # we are spamming the host for dhcp requests, because trusty can't resolve itself normally.
+    echo "while true; do ping -c 1 ${container}.lxd && break || dhclient eth0; done 2>&1" | lxc file push - $container/tmp/wait4dns
+done
+lxc exec $container /bin/bash /tmp/wait4dns >/dev/null
+
+if [[ $update -eq 1 ]]; then
+    lxc exec $container /usr/bin/apt-get update
+    lxc exec $container /usr/bin/apt-get -- --yes dist-upgrade
+fi
+lxc exec $container /bin/bash -- --login
+wait
+# we really mean ephemeral
+lxc delete -f $container
