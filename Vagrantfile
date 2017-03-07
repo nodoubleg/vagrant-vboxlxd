@@ -2,7 +2,7 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
-  onfig.vm.box = "ubuntu/xenial64"
+  config.vm.box = "ubuntu/xenial64"
 
   config.vm.provider "virtualbox" do |vb|
     # Do this as a linked clone if we can.
